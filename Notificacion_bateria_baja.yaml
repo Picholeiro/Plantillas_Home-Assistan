@@ -1,0 +1,76 @@
+blueprint:
+  name: Dectecion de las baterias & notificacion de todos lo sensores con bateria.
+  description: Regularly test all sensors with 'battery' device-class for crossing
+    a certain battery level threshold and if so execute an action.
+  domain: automation
+  input:
+    threshold:
+      name: Umbral del nivel de batería
+      description: Los sensores de batería por debajo del umbral se asumen como de batería baja (al igual que así como los sensores de batería binarios con valor «on»).
+      default: 20
+      selector:
+        number:
+          min: 5.0
+          max: 100.0
+          unit_of_measurement: '%'
+          mode: slider
+          step: 5.0
+    time:
+      name: Hora de comprobación.
+      description: Configuara la hora en la que se hara la comprobación
+      default: '10:00:00'
+      selector:
+        time: {}
+    day:
+      name: En que dia de la semana lo hara
+      description: |
+        'La prueba se ejecuta a la hora configurada, ya sea todos los días (0) o un determinado día de la semana (1: lunes ... 7: domingo)'
+      default: 0
+      selector:
+        number:
+          min: 0.0
+          max: 7.0
+          mode: slider
+          step: 1.0
+    exclude:
+      name: Sensores Excluido
+      description: Sensores de batería (por ejemplo, smartphone) para excluir de la detección. Solo se admiten entidades, ¡los dispositivos deben ampliarse!
+      default: {entity_id: []}
+      selector:
+        target:
+          entity:
+            device_class: battery
+    actions:
+      name: Actions
+      description: Notificaciones o similares a ejecutar. {{sensores}} se sustituye por los nombres de los sensores con poca batería.
+      selector:
+        action: {}
+  #source_url: https://gist.github.com/sbyx/1f6f434f0903b872b84c4302637d0890
+variables:
+  day: !input 'day'
+  threshold: !input 'threshold'
+  exclude: !input 'exclude'
+  sensors: >-
+    {% set result = namespace(sensors=[]) %}
+    {% for state in states.sensor | selectattr('attributes.device_class', '==', 'battery') %}
+      {% if 0 <= state.state | int(-1) < threshold | int and not state.entity_id in exclude.entity_id %}
+        {% set result.sensors = result.sensors + [state.name ~ ' (' ~ state.state ~ ' %)'] %}
+      {% endif %}
+    {% endfor %}
+    {% for state in states.binary_sensor | selectattr('attributes.device_class', '==', 'battery') | selectattr('state', '==', 'on') %}
+      {% if not state.entity_id in exclude.entity_id %}
+        {% set result.sensors = result.sensors + [state.name] %}
+      {% endif %}
+    {% endfor %}
+    {{result.sensors|join(', ')}}
+trigger:
+- platform: time
+  at: !input 'time'
+condition:
+- '{{ sensors != '''' and (day | int == 0 or day | int == now().isoweekday()) }}'
+action:
+- choose: []
+  default: !input 'actions'
+mode: single
+
+
